@@ -41,6 +41,14 @@ jobs:
       - name: Install Android build tools (aidl)
         run: |
           yes | sdkmanager --licenses
+          # Buildozer expects legacy tools/bin/sdkmanager path.
+          # New Android SDKs provide sdkmanager under cmdline-tools/*/bin.
+          mkdir -p /usr/local/lib/android/sdk/tools/bin
+          if [ -f /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager ]; then
+            sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          elif [ -f /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager ]; then
+            sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          fi
           sdkmanager \
             "platform-tools" \
             "platforms;android-34" \
