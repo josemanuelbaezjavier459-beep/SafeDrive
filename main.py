@@ -1038,6 +1038,7 @@ class MyApp(App):
         self.wifi_listener_thread = None
         self.wifi_stop_event = threading.Event()
         self.wifi_last_payload = ""
+        self.wifi_last_error_log_ts = 0.0
         self.store = JsonStore("user_data.json")
 
     def start_wifi_listener(self, ip_address):
@@ -1050,6 +1051,7 @@ class MyApp(App):
         self.wifi_device_ip = ip
         self.wifi_stop_event.clear()
         self.wifi_last_payload = ""
+        self.wifi_last_error_log_ts = 0.0
         self.wifi_listener_thread = threading.Thread(target=self._wifi_listener_worker, daemon=True)
         self.wifi_listener_thread.start()
         self.bluetooth_status_queue.put(("connected", "WIFI", f"Conectado por WiFi a {ip}", "WiFi ESP32"))
@@ -1087,7 +1089,12 @@ class MyApp(App):
                             if line:
                                 self.signal_inbox.put(line)
             except URLError:
-                pass
+                now = time.time()
+                if now - self.wifi_last_error_log_ts > 5:
+                    self.wifi_last_error_log_ts = now
+                    self.bluetooth_status_queue.put(
+                        ("error", "WIFI", f"No se pudo consultar http://{self.wifi_device_ip}/event", "WiFi ESP32")
+                    )
             except Exception as exc:
                 self.bluetooth_status_queue.put(("error", "WIFI", f"Error WiFi: {exc}", "WiFi ESP32"))
             time.sleep(1.0)

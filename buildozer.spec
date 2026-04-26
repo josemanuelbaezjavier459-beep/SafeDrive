@@ -21,8 +21,9 @@ android.sdk_path = /usr/local/lib/android/sdk
 android.accept_sdk_license = True
 android.skip_update = True
 
-# Permissions required for BLE scanning/connection on Android
-android.permissions = BLUETOOTH,BLUETOOTH_ADMIN,ACCESS_FINE_LOCATION,BLUETOOTH_SCAN,BLUETOOTH_CONNECT
+# Permissions required for BLE + WiFi HTTP polling on Android
+android.permissions = BLUETOOTH,BLUETOOTH_ADMIN,ACCESS_FINE_LOCATION,BLUETOOTH_SCAN,BLUETOOTH_CONNECT,INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CHANGE_WIFI_STATE
+android.add_manifest_application_attributes = android:usesCleartextTraffic="true"
 
 # Keep arm64 as primary target for modern Android devices
 android.archs = arm64-v8a
