@@ -1038,6 +1038,8 @@ class MyApp(App):
         self.wifi_listener_thread = None
         self.wifi_stop_event = threading.Event()
         self.wifi_last_payload = ""
+        self.wifi_last_payload_ts = 0.0
+        self.wifi_poll_interval = 0.25
         self.wifi_last_error_log_ts = 0.0
         self.store = JsonStore("user_data.json")
 
@@ -1051,6 +1053,7 @@ class MyApp(App):
         self.wifi_device_ip = ip
         self.wifi_stop_event.clear()
         self.wifi_last_payload = ""
+        self.wifi_last_payload_ts = 0.0
         self.wifi_last_error_log_ts = 0.0
         self.wifi_listener_thread = threading.Thread(target=self._wifi_listener_worker, daemon=True)
         self.wifi_listener_thread.start()
@@ -1073,8 +1076,11 @@ class MyApp(App):
                 url = f"http://{self.wifi_device_ip}/event"
                 with urlopen(url, timeout=2.0) as response:
                     payload = response.read().decode("utf-8", errors="ignore").strip()
-                if payload and payload not in ("NO_EVENT", "OK") and payload != self.wifi_last_payload:
+                now = time.time()
+                is_duplicate_too_soon = payload == self.wifi_last_payload and (now - self.wifi_last_payload_ts) < 0.8
+                if payload and payload not in ("NO_EVENT", "OK") and not is_duplicate_too_soon:
                     self.wifi_last_payload = payload
+                    self.wifi_last_payload_ts = now
                     try:
                         parsed = json.loads(payload)
                         event_text = parsed.get("event", "")
@@ -1097,7 +1103,7 @@ class MyApp(App):
                     )
             except Exception as exc:
                 self.bluetooth_status_queue.put(("error", "WIFI", f"Error WiFi: {exc}", "WiFi ESP32"))
-            time.sleep(1.0)
+            time.sleep(self.wifi_poll_interval)
 
     def _android_prepare_ble(self):
         if not IS_ANDROID or self.android_ble_ready:
