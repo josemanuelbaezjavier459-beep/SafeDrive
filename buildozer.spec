@@ -17,6 +17,9 @@ fullscreen = 0
 android.minapi = 24
 android.api = 34
 android.ndk_api = 24
+android.sdk_path = /usr/local/lib/android/sdk
+android.accept_sdk_license = True
+android.skip_update = True
 
 # Permissions required for BLE scanning/connection on Android
 android.permissions = BLUETOOTH,BLUETOOTH_ADMIN,ACCESS_FINE_LOCATION,BLUETOOTH_SCAN,BLUETOOTH_CONNECT
