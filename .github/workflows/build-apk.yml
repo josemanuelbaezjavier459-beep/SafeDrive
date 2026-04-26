@@ -36,7 +36,8 @@ jobs:
       - name: Install Python tooling
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install buildozer cython
+          # pyjnius in current p4a stack is not compatible with Cython 3.x
+          pip install "cython<3" buildozer
 
       - name: Install Android build tools (aidl)
         run: |
