@@ -17,9 +17,13 @@ from kivy.utils import platform as kivy_platform
 from kivy.uix.widget import Widget
 from datetime import datetime
 import asyncio
+import json
 import queue
 import re
 import threading
+import time
+from urllib.error import URLError
+from urllib.request import urlopen
 
 IS_ANDROID = kivy_platform == "android"
 IS_DESKTOP = not IS_ANDROID
@@ -358,7 +362,7 @@ class WelcomeScreen(Screen):
         )
         self.greeting.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
         pair_btn = RoundedButton(
-            text="Emparejar\ndispositivo",
+            text="conectar\ndispositivo",
             size_hint=(None, 1),
             width=dp(170),
             bg_color=(0.12, 0.08, 0.78, 1),
@@ -779,7 +783,7 @@ class BluetoothScreen(Screen):
 
         top_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(66), spacing=dp(12))
         title = Label(
-            text="Emparejar dispositivo",
+            text="Conectar dispositivo",
             font_size=dp(34),
             bold=True,
             color=(0, 0, 0, 1),
@@ -824,6 +828,44 @@ class BluetoothScreen(Screen):
             font_size=dp(14),
         )
         root.add_widget(self.message_label)
+
+        wifi_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
+        self.wifi_ip_input = TextInput(
+            text="192.168.4.1",
+            multiline=False,
+            hint_text="IP ESP32 (AP)",
+            background_normal="",
+            background_active="",
+            background_color=(1, 1, 1, 1),
+            foreground_color=(0, 0, 0, 1),
+            padding=(dp(10), dp(10), dp(10), dp(10)),
+        )
+        wifi_connect_btn = Button(
+            text="Conectar WiFi",
+            size_hint_x=None,
+            width=dp(160),
+            background_normal="",
+            background_down="",
+            background_color=(0.12, 0.4, 0.88, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+        )
+        wifi_disconnect_btn = Button(
+            text="Desconectar WiFi",
+            size_hint_x=None,
+            width=dp(180),
+            background_normal="",
+            background_down="",
+            background_color=(0.6, 0.2, 0.2, 1),
+            color=(1, 1, 1, 1),
+            bold=True,
+        )
+        wifi_connect_btn.bind(on_release=lambda *_: self.connect_wifi_device())
+        wifi_disconnect_btn.bind(on_release=lambda *_: self.disconnect_wifi_device())
+        wifi_row.add_widget(self.wifi_ip_input)
+        wifi_row.add_widget(wifi_connect_btn)
+        wifi_row.add_widget(wifi_disconnect_btn)
+        root.add_widget(wifi_row)
 
         scan_btn = Button(
             text="buscar dispositivos",
@@ -945,6 +987,17 @@ class BluetoothScreen(Screen):
         app.handle_arduino_signal(f"STOP|{device['name']}|40|0")
         self.message_label.text = "Senal simulada recibida y guardada en historial"
 
+    def connect_wifi_device(self):
+        app = App.get_running_app()
+        ip = self.wifi_ip_input.text.strip() or "192.168.4.1"
+        ok, msg = app.start_wifi_listener(ip)
+        self.message_label.text = msg
+
+    def disconnect_wifi_device(self):
+        app = App.get_running_app()
+        app.stop_wifi_listener()
+        self.message_label.text = "WiFi desconectado"
+
     def go_back(self):
         self.manager.current = "welcome"
 
@@ -981,7 +1034,63 @@ class MyApp(App):
         self.android_scan_callback = None
         self.android_gatt_callback = None
         self.android_gatt = None
+        self.wifi_device_ip = ""
+        self.wifi_listener_thread = None
+        self.wifi_stop_event = threading.Event()
+        self.wifi_last_payload = ""
         self.store = JsonStore("user_data.json")
+
+    def start_wifi_listener(self, ip_address):
+        ip = (ip_address or "").strip()
+        if not ip:
+            return False, "IP invalida"
+        if self.wifi_listener_thread is not None and self.wifi_listener_thread.is_alive():
+            return True, f"WiFi ya conectado a {self.wifi_device_ip}"
+
+        self.wifi_device_ip = ip
+        self.wifi_stop_event.clear()
+        self.wifi_last_payload = ""
+        self.wifi_listener_thread = threading.Thread(target=self._wifi_listener_worker, daemon=True)
+        self.wifi_listener_thread.start()
+        self.bluetooth_status_queue.put(("connected", "WIFI", f"Conectado por WiFi a {ip}", "WiFi ESP32"))
+        return True, f"Conectado por WiFi a {ip}"
+
+    def stop_wifi_listener(self):
+        self.wifi_stop_event.set()
+        if self.wifi_listener_thread is not None and self.wifi_listener_thread.is_alive():
+            self.wifi_listener_thread.join(timeout=1.0)
+        self.wifi_listener_thread = None
+        self.wifi_device_ip = ""
+
+    def _wifi_listener_worker(self):
+        while not self.wifi_stop_event.is_set():
+            if not self.wifi_device_ip:
+                time.sleep(0.5)
+                continue
+            try:
+                url = f"http://{self.wifi_device_ip}/event"
+                with urlopen(url, timeout=2.0) as response:
+                    payload = response.read().decode("utf-8", errors="ignore").strip()
+                if payload and payload not in ("NO_EVENT", "OK") and payload != self.wifi_last_payload:
+                    self.wifi_last_payload = payload
+                    try:
+                        parsed = json.loads(payload)
+                        event_text = parsed.get("event", "")
+                        location = parsed.get("location", "")
+                        if event_text:
+                            self.signal_inbox.put(event_text)
+                        if location:
+                            self.signal_inbox.put(location)
+                    except Exception:
+                        for line in payload.splitlines():
+                            line = line.strip()
+                            if line:
+                                self.signal_inbox.put(line)
+            except URLError:
+                pass
+            except Exception as exc:
+                self.bluetooth_status_queue.put(("error", "WIFI", f"Error WiFi: {exc}", "WiFi ESP32"))
+            time.sleep(1.0)
 
     def _android_prepare_ble(self):
         if not IS_ANDROID or self.android_ble_ready:
