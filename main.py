@@ -103,6 +103,13 @@ if IS_ANDROID:
             if app:
                 app._android_on_characteristic_changed(characteristic)
 
+        # Android 13+ callback signature includes the value bytes directly.
+        @java_method("(Landroid/bluetooth/BluetoothGatt;Landroid/bluetooth/BluetoothGattCharacteristic;[B)V")
+        def onCharacteristicChanged2(self, gatt, characteristic, value):
+            app = App.get_running_app()
+            if app:
+                app._android_on_characteristic_changed(characteristic, value=value)
+
 
 class RoundedPanel(BoxLayout):
     """BoxLayout with rounded colored background."""
@@ -1036,7 +1043,7 @@ class MyApp(App):
             if device is None:
                 return
             name = device.getName() or "Dispositivo BLE"
-            address = device.getAddress() or ""
+            address = (device.getAddress() or "").upper()
             if not address:
                 return
             for item in self.bluetooth_devices:
@@ -1051,7 +1058,7 @@ class MyApp(App):
     def _android_connect_ble(self, device):
         if not self._android_prepare_ble():
             return False, "BLE Android no disponible"
-        address = device.get("address", "")
+        address = (device.get("address", "") or "").upper()
         if not address:
             return False, "Direccion BLE invalida"
         try:
@@ -1060,7 +1067,13 @@ class MyApp(App):
             remote_device = self.android_bluetooth_adapter.getRemoteDevice(address)
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             activity = PythonActivity.mActivity
-            self.android_gatt = remote_device.connectGatt(activity, False, self.android_gatt_callback)
+            try:
+                BluetoothDevice = autoclass("android.bluetooth.BluetoothDevice")
+                self.android_gatt = remote_device.connectGatt(
+                    activity, False, self.android_gatt_callback, BluetoothDevice.TRANSPORT_LE
+                )
+            except Exception:
+                self.android_gatt = remote_device.connectGatt(activity, False, self.android_gatt_callback)
             return True, f"Conectando a {device.get('name', 'BLE')}..."
         except Exception as exc:
             return False, f"Error al conectar BLE Android: {exc}"
@@ -1079,8 +1092,10 @@ class MyApp(App):
             return
         try:
             BluetoothProfile = autoclass("android.bluetooth.BluetoothProfile")
-            address = gatt.getDevice().getAddress()
+            address = (gatt.getDevice().getAddress() or "").upper()
             name = gatt.getDevice().getName() or "Dispositivo BLE"
+            if int(status) != 0:
+                self.bluetooth_status_queue.put(("error", address, f"Error BLE ({status}) en {name}", name))
             if new_state == BluetoothProfile.STATE_CONNECTED:
                 self.bluetooth_status_queue.put(("connected", address, f"{name} conectado", name))
                 gatt.discoverServices()
@@ -1113,12 +1128,12 @@ class MyApp(App):
         except Exception as exc:
             self.bluetooth_status_queue.put(("error", "ANDROID", f"Error configurando notify: {exc}", "Android BLE"))
 
-    def _android_on_characteristic_changed(self, characteristic):
+    def _android_on_characteristic_changed(self, characteristic, value=None):
         if not IS_ANDROID:
             return
         try:
-            value = characteristic.getValue()
-            text = bytes(value).decode("utf-8", errors="ignore")
+            raw_value = value if value is not None else characteristic.getValue()
+            text = bytes(raw_value).decode("utf-8", errors="ignore")
             if text:
                 self.signal_inbox.put(text.strip())
         except Exception:
@@ -1532,7 +1547,7 @@ class MyApp(App):
         while not self.bluetooth_status_queue.empty():
             status, address, message, device_name = self.bluetooth_status_queue.get_nowait()
             for device in self.bluetooth_devices:
-                if device.get("address") == address:
+                if (device.get("address") or "").upper() == (address or "").upper():
                     device["connected"] = status == "connected"
                     break
             if bluetooth_screen is not None and status in ("error", "connected", "disconnected"):
