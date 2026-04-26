@@ -21,6 +21,9 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -35,7 +38,16 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools
           pip install buildozer cython
 
+      - name: Install Android build tools (aidl)
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Build debug APK
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          PATH: /usr/local/lib/android/sdk/build-tools/34.0.0:/usr/local/lib/android/sdk/platform-tools:${{ env.PATH }}
         run: |
           buildozer -v android debug
 
