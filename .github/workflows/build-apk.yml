@@ -66,7 +66,26 @@ jobs:
           ANDROIDSDK: /usr/local/lib/android/sdk
         run: |
           export PATH="$ANDROID_SDK_ROOT/build-tools/34.0.0:$ANDROID_SDK_ROOT/platform-tools:$PATH"
-          buildozer -v android debug
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer.log
+
+      - name: Show failure summary
+        if: failure()
+        run: |
+          echo "----- Last 200 lines of buildozer.log -----"
+          tail -n 200 buildozer.log || true
+          echo "----- Python-for-Android logs (if present) -----"
+          ls -la .buildozer/android/platform/build-*/dists/*/ || true
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safedrive-build-logs
+          path: |
+            buildozer.log
+            .buildozer/**/*.log
+          if-no-files-found: warn
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
