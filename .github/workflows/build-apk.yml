@@ -41,12 +41,21 @@ jobs:
       - name: Install Android build tools (aidl)
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "build-tools;33.0.2" \
+            "build-tools;30.0.3"
+          test -f /usr/local/lib/android/sdk/build-tools/34.0.0/aidl
+          sudo ln -sf /usr/local/lib/android/sdk/build-tools/34.0.0/aidl /usr/local/bin/aidl
+          aidl --version || true
 
       - name: Build debug APK
         env:
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
           ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROIDSDK: /usr/local/lib/android/sdk
         run: |
           export PATH="$ANDROID_SDK_ROOT/build-tools/34.0.0:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           buildozer -v android debug
