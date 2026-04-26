@@ -1039,7 +1039,9 @@ class MyApp(App):
         self.wifi_stop_event = threading.Event()
         self.wifi_last_payload = ""
         self.wifi_last_payload_ts = 0.0
-        self.wifi_poll_interval = 0.25
+        self.wifi_poll_interval = 0.2
+        self.wifi_request_timeout = 0.6
+        self.wifi_duplicate_window = 0.35
         self.wifi_last_error_log_ts = 0.0
         self.store = JsonStore("user_data.json")
 
@@ -1074,10 +1076,12 @@ class MyApp(App):
                 continue
             try:
                 url = f"http://{self.wifi_device_ip}/event"
-                with urlopen(url, timeout=2.0) as response:
+                with urlopen(url, timeout=self.wifi_request_timeout) as response:
                     payload = response.read().decode("utf-8", errors="ignore").strip()
                 now = time.time()
-                is_duplicate_too_soon = payload == self.wifi_last_payload and (now - self.wifi_last_payload_ts) < 0.8
+                is_duplicate_too_soon = (
+                    payload == self.wifi_last_payload and (now - self.wifi_last_payload_ts) < self.wifi_duplicate_window
+                )
                 if payload and payload not in ("NO_EVENT", "OK") and not is_duplicate_too_soon:
                     self.wifi_last_payload = payload
                     self.wifi_last_payload_ts = now
@@ -1699,7 +1703,7 @@ class MyApp(App):
             self.contacts = self.store.get("contacts").get("items", [])
         if self.store.exists("history"):
             self.signal_history = self.store.get("history").get("items", [])
-        Clock.schedule_interval(self._poll_signal_receiver, 1.0)
+        Clock.schedule_interval(self._poll_signal_receiver, 0.2)
         return sm
 
 
